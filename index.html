@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام إدارة مواقع الأعمدة</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Tajawal', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-4xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">نظام إدارة وتحديد مواقع الأعمدة</h1>
+            <p class="text-gray-600 mt-2">البحث برقم المنطقة والعمود</p>
+        </header>
+
+        <!-- قسم البحث وعرض الإحداثيات من المعطيات -->
+        <div class="card bg-blue-50 border-r-4 border-blue-500">
+            <h2 class="text-xl font-bold mb-4 text-blue-800">البحث المتقدم (Zone / FAT)</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">المنطقة (Zone)</label>
+                    <input type="text" id="zoneSearch" placeholder="مثلاً: 45 أو FTK0045" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">العمود (FAT)</label>
+                    <input type="text" id="fatSearch" placeholder="مثلاً: 1 أو FAT01" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+            </div>
+            
+            <div id="searchResults" class="mb-4 max-h-40 overflow-y-auto border rounded-md hidden bg-white shadow-inner">
+                <!-- نتائج البحث تظهر هنا -->
+            </div>
+
+            <div id="coordsDisplay" class="space-y-3 hidden">
+                <div class="grid grid-cols-2 gap-4 p-3 bg-white rounded-lg border border-blue-200">
+                    <div>
+                        <span class="text-xs text-gray-500 block">خط العرض الأصلي</span>
+                        <span id="latVal" class="font-mono font-bold text-blue-700">-</span>
+                    </div>
+                    <div>
+                        <span class="text-xs text-gray-500 block">خط الطول الأصلي</span>
+                        <span id="longVal" class="font-mono font-bold text-blue-700">-</span>
+                    </div>
+                </div>
+                
+                <div class="p-3 bg-white rounded-lg border border-blue-200 flex justify-between items-center">
+                    <div class="flex-1">
+                        <span class="text-xs text-gray-500 block">الإحداثيات الأصلية الكاملة</span>
+                        <span id="latlongVal" class="font-mono font-bold text-blue-900">-</span>
+                    </div>
+                    <!--<button type="button" onclick="copyIndividualField('latlongVal')" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1 rounded flex items-center gap-1 transition-colors text-sm">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                        </svg>
+                        نسخ
+                    </button>-->
+                </div>
+            </div>
+        </div>
+
+        <!-- نموذج إدخال البيانات -->
+        <div class="card">
+            <h2 class="text-xl font-bold mb-6 text-gray-800">بيانات المشترك</h2>
+            <form id="dataForm" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">اسم المسوق</label>
+                        <input type="text" id="fullName" placeholder="أدخل الاسم" required class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 outline-none">
+                        
+                        <label class="block text-sm font-medium text-gray-700 mt-3 mb-1">المحلة (Neighborhood)</label>
+                        <input type="text" id="neighborhood" class="w-full p-2 border border-gray-300 rounded-md outline-none bg-gray-50" readonly>
+                        
+                        <label class="block text-sm font-medium text-gray-700 mt-3 mb-1">الزقاق (Street)</label>
+                        <input type="text" id="alley" class="w-full p-2 border border-gray-300 rounded-md outline-none bg-gray-50" readonly>
+                        
+                        <label class="block text-sm font-medium text-gray-700 mt-3 mb-1">رقم الدار (House)</label>
+                        <input type="text" id="houseNum" class="w-full p-2 border border-gray-300 rounded-md outline-none bg-gray-50" readonly>
+                    </div>
+                </div>
+
+                <!-- حقل الإحداثيات المشفرة الجديد -->
+                <div class="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <label class="block text-xs font-bold text-blue-700 mb-2">الإحداثيات المشفرة (تقريب 10 متر)</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="jitteredCoordsField" readonly class="flex-1 p-2 bg-white border border-blue-300 rounded-md font-mono text-sm text-blue-800" placeholder="0.000000, 0.000000">
+                        <button type="button" id="copyJitterBtn" onclick="copyIndividualField('jitteredCoordsField')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-md text-sm transition-colors">
+                            نسخ
+                        </button>
+                    </div>
+                </div>
+
+                <!-- حقل التجميع والنسخ -->
+                <div class="mt-6 p-4 bg-gray-100 rounded-lg border border-dashed border-gray-400">
+                    <label class="block text-sm font-bold text-gray-700 mb-2">النص المجمع للنسخ (الاسم / الحي / الزون)</label>
+                    <div class="flex gap-2">
+                        <textarea id="combinedField" readonly class="flex-1 p-2 bg-white border border-gray-300 rounded-md font-bold text-gray-800 text-sm h-24" placeholder="الاسم / الحي / الزون"></textarea>
+                        <button type="button" onclick="copyCombinedText()" class="bg-gray-800 hover:bg-black text-white px-4 py-2 rounded-md transition-colors flex items-center self-start">
+                            <span>نسخ الكل</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="pt-4 border-t">
+                    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-all shadow-md">تأكيد البيانات</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let poleData = [];
+        let selectedPole = null;
+
+        // دالة لتقريب الإحداثيات عشوائياً (بحدود 10 أمتار تقريباً)
+        function jitterCoordinate(val) {
+            const jitterAmount = 0.00020; 
+            const jitter = Math.random() * jitterAmount;
+            const direction = Math.random() < 0.5 ? -1 : 1;
+            return (val + (jitter * direction)).toFixed(6);
+        }
+
+        // تحليل الـ CSV
+        function parseCSV(csvText) {
+            const lines = csvText.split(/\r?\n/);
+            if (lines.length === 0) return [];
+            const headers = lines[0].split(',').map(h => h.trim());
+            const result = [];
+            for (let i = 1; i < lines.length; i++) {
+                if (!lines[i].trim()) continue;
+                const currentLine = lines[i].split(',');
+                const obj = {};
+                headers.forEach((header, index) => {
+                    let value = currentLine[index] ? currentLine[index].trim() : "";
+                    if (header === 'lat' || header === 'long') value = parseFloat(value);
+                    obj[header] = value;
+                });
+                result.push(obj);
+            }
+            return result;
+        }
+
+        async function loadData() {
+            try {
+                const response = await fetch('sm_data.csv');
+                const csvText = await response.text();
+                poleData = parseCSV(csvText);
+            } catch (error) {
+                console.error("خطأ في التحميل:", error);
+            }
+        }
+
+        // تحديث الحقل المجمع والإحداثيات المشفرة
+        function updateCombinedText() {
+            const name = document.getElementById('fullName').value || "الاسم";
+            
+            if (selectedPole) {
+                const zone = selectedPole.OLT_ID || "الزون";
+                const addr = selectedPole.AddrZone || "الحي";
+                
+                // توليد إحداثيات مشفرة جديدة
+                const jLat = jitterCoordinate(selectedPole.lat);
+                const jLong = jitterCoordinate(selectedPole.long);
+                const coords = `${jLat}, ${jLong}`;
+                
+                // تحديث حقل الإحداثيات المنفصل
+                document.getElementById('jitteredCoordsField').value = coords;
+                
+                // تحديث الحقل المجمع
+                document.getElementById('combinedField').value = `${name} - ${addr}`;
+            } else {
+                const zone = document.getElementById('zoneSearch').value || "الزون";
+                document.getElementById('combinedField').value = `${name} - الحي`;
+            }
+        }
+
+        // تعبئة البيانات عند الاختيار
+        function selectFat(index) {
+            selectedPole = poleData[index];
+            const p = selectedPole;
+            
+            const fatNumber = p.NumFat || "";
+            document.getElementById('houseNum').value = fatNumber;
+            document.getElementById('neighborhood').value = fatNumber;
+            document.getElementById('alley').value = fatNumber;
+            
+            document.getElementById('fatSearch').value = p.FAT_ID || p.NumFat;
+            document.getElementById('zoneSearch').value = p.OLT_ID || p.NumZone;
+
+            // عرض الإحداثيات الأصلية
+            document.getElementById('latVal').innerText = p.lat || "-";
+            document.getElementById('longVal').innerText = p.long || "-";
+            document.getElementById('latlongVal').innerText = (p.lat && p.long) ? p.lat + ', ' + p.long : "-";
+            
+            document.getElementById('coordsDisplay').classList.remove('hidden');
+
+            document.getElementById('searchResults').classList.add('hidden');
+            updateCombinedText();
+        }
+
+        function setupSearch() {
+            const zoneInp = document.getElementById('zoneSearch');
+            const fatInp = document.getElementById('fatSearch');
+            const resultsDiv = document.getElementById('searchResults');
+
+            const performSearch = () => {
+                const zVal = zoneInp.value.toLowerCase();
+                const fVal = fatInp.value.toLowerCase();
+                if (!zVal && !fVal) { resultsDiv.classList.add('hidden'); return; }
+
+                const filtered = poleData.filter((p, i) => {
+                    const matchZ = (p.OLT_ID || "").toLowerCase().includes(zVal) || (p.NumZone || "").toString().includes(zVal);
+                    const matchF = (p.FAT_ID || "").toLowerCase().includes(fVal) || (p.NumFat || "").toString().includes(fVal);
+                    p._idx = i; 
+                    return matchZ && matchF;
+                }).slice(0, 10);
+
+                if (filtered.length > 0) {
+                    resultsDiv.classList.remove('hidden');
+                    resultsDiv.innerHTML = filtered.map(p => `
+                        <div class="p-3 border-b hover:bg-blue-50 cursor-pointer" onclick="selectFat(${p._idx})">
+                            <div class="flex justify-between items-center">
+                                <span class="font-bold text-blue-900">${p.FAT_ID}</span>
+                                <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">${p.NumZone}</span>
+                            </div>
+                            <div class="text-[10px] text-gray-500 mt-1">${p.OLT_ID} | ${p.AddrZone || 'منطقة غير مسماة'}</div>
+                        </div>
+                    `).join('');
+                } else {
+                    resultsDiv.innerHTML = '<div class="p-3 text-gray-500 text-center">لا توجد نتائج</div>';
+                }
+            };
+
+            zoneInp.addEventListener('input', performSearch);
+            fatInp.addEventListener('input', performSearch);
+            document.getElementById('fullName').addEventListener('input', updateCombinedText);
+        }
+
+        // دالة لنسخ حقل محدد (يدعم span أو input)
+        function copyIndividualField(fieldId) {
+            const element = document.getElementById(fieldId);
+            let textToCopy = "";
+            
+            if (element.tagName === "INPUT" || element.tagName === "TEXTAREA") {
+                textToCopy = element.value;
+            } else {
+                textToCopy = element.innerText;
+            }
+
+            if (!textToCopy || textToCopy === "-") return;
+            
+            const tempInput = document.createElement("input");
+            tempInput.value = textToCopy;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+            
+            const btn = event.currentTarget;
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = 'تم!';
+            setTimeout(() => btn.innerHTML = originalHTML, 1500);
+        }
+
+        // نسخ النص المجمع بالكامل
+        function copyCombinedText() {
+            const field = document.getElementById('combinedField');
+            if (!field.value) return;
+            
+            updateCombinedText(); 
+            field.select();
+            document.execCommand('copy');
+            
+            const btn = event.currentTarget;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<span>تم النسخ!</span>';
+            btn.classList.replace('bg-gray-800', 'bg-green-600');
+            
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.classList.replace('bg-green-600', 'bg-gray-800');
+            }, 2000);
+        }
+
+        window.onload = () => {
+            loadData();
+            setupSearch();
+        };
+    </script>
+</body>
+</html>

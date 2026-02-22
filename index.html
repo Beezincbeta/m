@@ -286,14 +286,14 @@
             try {
                 // Simulated fetch since we don't have the actual file in this environment
                 // In production, use: const response = await fetch('sm_data.csv');
-                const mockCSV = `OLT_ID,FAT_ID,NumZone,NumFat,AddrZone,lat,long\nFTK0045,FAT01,45,01,المنصور - حي دراغ,33.3281,44.3415\nFTK0045,FAT02,45,02,المنصور - حي دراغ,33.3285,44.3420\nFTK0046,FAT01,46,01,اليرموك - الاربع شوارع,33.3100,44.3500`;
+                // const mockCSV = `OLT_ID,FAT_ID,NumZone,NumFat,AddrZone,lat,long\nFTK0045,FAT01,45,01,المنصور - حي دراغ,33.3281,44.3415\nFTK0045,FAT02,45,02,المنصور - حي دراغ,33.3285,44.3420\nFTK0046,FAT01,46,01,اليرموك - الاربع شوارع,33.3100,44.3500`;
                 
                 // For live use, uncomment below:
-                // const response = await fetch('sm_data.csv');
-                // const csvText = await response.text();
-                // poleData = parseCSV(csvText);
+                const response = await fetch('sm_data.csv');
+                const csvText = await response.text();
+                poleData = parseCSV(csvText);
                 
-                poleData = parseCSV(mockCSV); 
+                // poleData = parseCSV(mockCSV); 
                 
                 statusDot.classList.replace('bg-yellow-400', 'bg-green-500');
                 statusText.innerText = `تم تحميل ${poleData.length} عمود`;

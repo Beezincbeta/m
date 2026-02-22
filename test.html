@@ -341,7 +341,7 @@
                 poleData = parseCSV(csvText);
                 if (poleData.length > 0) {
                     document.getElementById('dbStatusDot').className = 'w-2 h-2 rounded-full bg-green-500';
-                    document.getElementById('dbStatusText').innerText = `تم تحميل ${poleData.length} عمود`;
+                    document.getElementById('dbStatusText').innerText = `تم التحميل`;  //${poleData.length}
                 }
             } catch (error) {
                 document.getElementById('dbStatusDot').className = 'w-2 h-2 rounded-full bg-red-500';

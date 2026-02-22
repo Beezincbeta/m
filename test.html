@@ -180,7 +180,6 @@
          * Fetch route from OSRM API
          */
         async function fetchOSRMRoute(start, end) {
-            // OSRM expects [lng, lat]
             const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
             try {
                 const response = await fetch(url);
@@ -208,7 +207,6 @@
 
             if (poleData.length === 0) return showToast('قاعدة البيانات فارغة أو لم يتم تحميلها');
 
-            // Initial sort by air distance to get top candidates
             const results = poleData.map((p, i) => ({
                 ...p, _idx: i,
                 distance: calculateAirDistance(lat, lng, p.lat, p.long)
@@ -257,18 +255,19 @@
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
             }
 
-            // Clear map
             if (markers.pole) map.removeLayer(markers.pole);
             if (markers.search) map.removeLayer(markers.search);
             if (routeLayer) map.removeLayer(routeLayer);
 
-            // Add Pole Marker
-            markers.pole = L.marker([polePos.lat, polePos.lng]).addTo(map).bindPopup("<b>موقع العمود</b>").openPopup();
+            // تم إضافة FAT_ID هنا ليظهر داخل الـ Popup الخاص بالماركر
+            markers.pole = L.marker([polePos.lat, polePos.lng])
+                .addTo(map)
+                .bindPopup(`<b>موقع العمود: ${selectedPole.FAT_ID}</b>`)
+                .openPopup();
 
             if (lastSearchPoint) {
                 document.getElementById('distVal').innerText = "جاري حساب المسار...";
                 
-                // Add Search Point Marker
                 const orangeIcon = new L.Icon({
                     iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png',
                     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
@@ -276,24 +275,19 @@
                 });
                 markers.search = L.marker([lastSearchPoint.lat, lastSearchPoint.lng], {icon: orangeIcon}).addTo(map).bindPopup("<b>نقطة البداية</b>");
 
-                // Get Route from OSRM
                 const route = await fetchOSRMRoute(lastSearchPoint, polePos);
 
                 if (route) {
-                    // Draw Route Line
                     routeLayer = L.geoJSON(route.geometry, {
                         style: { color: '#2563eb', weight: 6, opacity: 0.8 }
                     }).addTo(map);
 
-                    // Update Distance
                     const distanceMeters = route.distance;
                     const durationMinutes = Math.round(route.duration / 60);
                     document.getElementById('distVal').innerText = `${distanceMeters.toFixed(0)} متر (${durationMinutes} دقيقة)`;
 
-                    // Zoom to fit
                     map.fitBounds(routeLayer.getBounds(), { padding: [50, 50] });
                 } else {
-                    // Fallback to straight line if OSRM fails
                     routeLayer = L.polyline([[lastSearchPoint.lat, lastSearchPoint.lng], [polePos.lat, polePos.lng]], {
                         color: '#ef4444', weight: 4, dashArray: '5, 10'
                     }).addTo(map);
@@ -347,7 +341,7 @@
                 poleData = parseCSV(csvText);
                 if (poleData.length > 0) {
                     document.getElementById('dbStatusDot').className = 'w-2 h-2 rounded-full bg-green-500';
-                    document.getElementById('dbStatusText').innerText = `تم تحميل ${poleData.length} عمود من sm_data.csv`;
+                    document.getElementById('dbStatusText').innerText = `تم تحميل ${poleData.length} عمود`;
                 }
             } catch (error) {
                 document.getElementById('dbStatusDot').className = 'w-2 h-2 rounded-full bg-red-500';

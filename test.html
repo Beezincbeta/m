@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>نظام إدارة وتحديد مواقع الأعمدة</title>
+    <title>نظام إدارة وتحديد مواقع الأعمدة - OSRM</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -21,7 +21,7 @@
             border: 1px solid #e2e8f0;
         }
         #map {
-            height: 400px;
+            height: 450px;
             width: 100%;
             border-radius: 12px;
             margin-top: 1rem;
@@ -40,6 +40,14 @@
         .copy-btn:active {
             transform: scale(0.9);
         }
+        .route-info-badge {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 5px 10px;
+            border-radius: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            font-weight: bold;
+            color: #1e40af;
+        }
     </style>
 </head>
 <body class="p-4 md:p-6 lg:p-8">
@@ -48,7 +56,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
             <div class="text-right">
                 <h1 class="text-3xl font-extrabold text-slate-800 tracking-tight">إدارة مواقع الأعمدة</h1>
-                <p class="text-slate-500 mt-1">البحث بالمعرفات أو الإحداثيات الجغرافية من sm_data.csv</p>
+                <p class="text-slate-500 mt-1">تتبع المسارات عبر الشوارع باستخدام OSRM</p>
             </div>
             <div id="statusIndicator" class="flex items-center gap-2 bg-white px-4 py-2 rounded-full shadow-sm border border-slate-100 text-sm font-medium text-slate-600">
                 <span class="w-2 h-2 rounded-full bg-yellow-400" id="dbStatusDot"></span>
@@ -120,8 +128,8 @@
                                 </button>
                             </div>
                             <div class="p-3 bg-green-50 rounded-xl border border-green-100">
-                                <span class="text-[10px] text-green-600 font-bold block">المسافة الفاصلة</span>
-                                <span id="distVal" class="text-sm font-bold text-slate-700">-</span>
+                                <span class="text-[10px] text-green-600 font-bold block">مسافة الطريق (OSRM)</span>
+                                <span id="distVal" class="text-sm font-bold text-slate-700">جاري الحساب...</span>
                             </div>
                         </div>
                         <div id="map"></div>
@@ -143,7 +151,7 @@
         let selectedPole = null;
         let map = null;
         let markers = { pole: null, search: null };
-        let polyline = null;
+        let routeLayer = null;
         let lastSearchPoint = null;
 
         function switchTab(type) {
@@ -156,13 +164,34 @@
             document.getElementById('searchResults').classList.add('hidden');
         }
 
-        function calculateDistance(lat1, lon1, lat2, lon2) {
+        /**
+         * Calculate air distance for initial sorting (Haversine)
+         */
+        function calculateAirDistance(lat1, lon1, lat2, lon2) {
             const R = 6371000;
             const dLat = (lat2 - lat1) * Math.PI / 180;
             const dLon = (lon2 - lon1) * Math.PI / 180;
             const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
                       Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
             return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        /**
+         * Fetch route from OSRM API
+         */
+        async function fetchOSRMRoute(start, end) {
+            // OSRM expects [lng, lat]
+            const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data.code === 'Ok') {
+                    return data.routes[0];
+                }
+            } catch (e) {
+                console.error("OSRM Error:", e);
+            }
+            return null;
         }
 
         function findNearestPole() {
@@ -179,9 +208,10 @@
 
             if (poleData.length === 0) return showToast('قاعدة البيانات فارغة أو لم يتم تحميلها');
 
+            // Initial sort by air distance to get top candidates
             const results = poleData.map((p, i) => ({
                 ...p, _idx: i,
-                distance: calculateDistance(lat, lng, p.lat, p.long)
+                distance: calculateAirDistance(lat, lng, p.lat, p.long)
             })).sort((a, b) => a.distance - b.distance).slice(0, 5);
 
             displaySearchResults(results, true);
@@ -200,7 +230,7 @@
                             </div>
                             <div class="text-left">
                                 <span class="text-[10px] bg-blue-50 text-blue-700 px-2 py-1 rounded-md font-bold">Zone ${p.NumZone}</span>
-                                ${showDistance ? `<div class="text-xs text-green-600 font-bold mt-1">${Math.round(p.distance)} م</div>` : ''}
+                                ${showDistance ? `<div class="text-xs text-green-600 font-bold mt-1">${Math.round(p.distance)} م (جوي)</div>` : ''}
                             </div>
                         </div>
                     </div>
@@ -216,44 +246,62 @@
             document.getElementById('coordsDisplay').classList.remove('hidden');
             document.getElementById('searchResults').classList.add('hidden');
             
-            updateMapDisplay();
+            updateMapWithRoute();
         }
 
-        function updateMapDisplay() {
-            const polePos = [selectedPole.lat, selectedPole.long];
+        async function updateMapWithRoute() {
+            const polePos = { lat: selectedPole.lat, lng: selectedPole.long };
             
             if (!map) {
-                map = L.map('map').setView(polePos, 18);
+                map = L.map('map').setView([polePos.lat, polePos.lng], 18);
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
             }
 
+            // Clear map
             if (markers.pole) map.removeLayer(markers.pole);
             if (markers.search) map.removeLayer(markers.search);
-            if (polyline) map.removeLayer(polyline);
+            if (routeLayer) map.removeLayer(routeLayer);
 
-            markers.pole = L.marker(polePos).addTo(map).bindPopup("<b>موقع العمود</b>").openPopup();
+            // Add Pole Marker
+            markers.pole = L.marker([polePos.lat, polePos.lng]).addTo(map).bindPopup("<b>موقع العمود</b>").openPopup();
 
             if (lastSearchPoint) {
-                const searchPos = [lastSearchPoint.lat, lastSearchPoint.lng];
-                const dist = calculateDistance(polePos[0], polePos[1], searchPos[0], searchPos[1]);
+                document.getElementById('distVal').innerText = "جاري حساب المسار...";
                 
+                // Add Search Point Marker
                 const orangeIcon = new L.Icon({
                     iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png',
                     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
                     iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
                 });
-                markers.search = L.marker(searchPos, {icon: orangeIcon}).addTo(map).bindPopup("<b>موقعك الحالي</b>");
+                markers.search = L.marker([lastSearchPoint.lat, lastSearchPoint.lng], {icon: orangeIcon}).addTo(map).bindPopup("<b>نقطة البداية</b>");
 
-                polyline = L.polyline([polePos, searchPos], {color: '#3b82f6', weight: 4, dashArray: '10, 10'}).addTo(map);
-                
-                document.getElementById('distVal').innerText = `${dist.toFixed(1)} متر تقريباً`;
-                
-                const group = new L.featureGroup([markers.pole, markers.search]);
-                map.fitBounds(group.getBounds().pad(0.2));
+                // Get Route from OSRM
+                const route = await fetchOSRMRoute(lastSearchPoint, polePos);
+
+                if (route) {
+                    // Draw Route Line
+                    routeLayer = L.geoJSON(route.geometry, {
+                        style: { color: '#2563eb', weight: 6, opacity: 0.8 }
+                    }).addTo(map);
+
+                    // Update Distance
+                    const distanceMeters = route.distance;
+                    const durationMinutes = Math.round(route.duration / 60);
+                    document.getElementById('distVal').innerText = `${distanceMeters.toFixed(0)} متر (${durationMinutes} دقيقة)`;
+
+                    // Zoom to fit
+                    map.fitBounds(routeLayer.getBounds(), { padding: [50, 50] });
+                } else {
+                    // Fallback to straight line if OSRM fails
+                    routeLayer = L.polyline([[lastSearchPoint.lat, lastSearchPoint.lng], [polePos.lat, polePos.lng]], {
+                        color: '#ef4444', weight: 4, dashArray: '5, 10'
+                    }).addTo(map);
+                    document.getElementById('distVal').innerText = "تعذر حساب مسار الشوارع";
+                }
             } else {
-                map.setView(polePos, 18);
+                map.setView([polePos.lat, polePos.lng], 18);
                 document.getElementById('distVal').innerText = "اختر موقع بحث";
-                document.getElementById('searchCoordText').innerText = "غير محدد";
             }
         }
 
@@ -284,9 +332,7 @@
                 const obj = {};
                 headers.forEach((h, i) => {
                     let v = vals[i] ? vals[i].trim() : "";
-                    if (h === 'lat' || h === 'long') {
-                        v = parseFloat(v);
-                    }
+                    if (h === 'lat' || h === 'long') v = parseFloat(v);
                     obj[h] = v;
                 });
                 return obj;
@@ -297,21 +343,15 @@
             try {
                 const response = await fetch('sm_data.csv');
                 if (!response.ok) throw new Error('فشل جلب ملف CSV');
-                
                 const csvText = await response.text();
                 poleData = parseCSV(csvText);
-
                 if (poleData.length > 0) {
                     document.getElementById('dbStatusDot').className = 'w-2 h-2 rounded-full bg-green-500';
-                    document.getElementById('dbStatusText').innerText = `تم تحميل ${poleData.length} سجل من sm_data.csv`;
-                } else {
-                    throw new Error('الملف فارغ أو بتنسيق غير صحيح');
+                    document.getElementById('dbStatusText').innerText = `تم تحميل ${poleData.length} عمود من sm_data.csv`;
                 }
             } catch (error) {
-                console.error(error);
                 document.getElementById('dbStatusDot').className = 'w-2 h-2 rounded-full bg-red-500';
                 document.getElementById('dbStatusText').innerText = "خطأ في تحميل قاعدة البيانات";
-                showToast("تأكد من وجود ملف sm_data.csv في نفس المجلد");
             }
         }
 
@@ -323,10 +363,7 @@
                 if (!z && !f) return document.getElementById('searchResults').classList.add('hidden');
                 const res = poleData.filter((p, i) => {
                     p._idx = i;
-                    // Search in OLT_ID, NumZone, FAT_ID, and NumFat
-                    const zoneMatch = (p.OLT_ID + p.NumZone).toLowerCase().includes(z);
-                    const fatMatch = (p.FAT_ID + p.NumFat).toLowerCase().includes(f);
-                    return zoneMatch && fatMatch;
+                    return (p.OLT_ID + p.NumZone).toLowerCase().includes(z) && (p.FAT_ID + p.NumFat).toLowerCase().includes(f);
                 }).slice(0, 10);
                 displaySearchResults(res);
             };

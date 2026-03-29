@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GIS Saladin - Mobile Optimized</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap');
+        
+        body {
+            font-family: 'Tajawal', sans-serif;
+            height: 100vh;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background-color: #f8fafc;
+        }
+
+        #map { flex-grow: 1; z-index: 1; }
+
+        /* Mobile Bottom Sheet Design */
+        .search-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 1100;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border-top: 1px solid rgba(0,0,0,0.05);
+            border-radius: 30px 30px 0 0;
+            box-shadow: 0 -10px 40px rgba(0,0,0,0.1);
+            padding: 20px;
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+
+        @media (min-width: 768px) {
+            .search-panel {
+                top: 20px;
+                right: 20px;
+                left: auto;
+                bottom: auto;
+                width: 380px;
+                border-radius: 24px;
+                border: 1px solid rgba(0,0,0,0.05);
+            }
+        }
+
+        .search-hidden { transform: translateY(100%); }
+        @media (min-width: 768px) { .search-hidden { transform: translateY(-150%); opacity: 0; } }
+
+        /* Drag Handle for Mobile */
+        .drag-handle {
+            width: 40px;
+            height: 5px;
+            background: #e2e8f0;
+            border-radius: 10px;
+            margin: -10px auto 15px;
+        }
+
+        .custom-popup .leaflet-popup-content-wrapper {
+            border-radius: 16px;
+            background: #1e293b;
+            color: white;
+            padding: 4px;
+        }
+
+        .loading-screen {
+            position: fixed;
+            inset: 0;
+            background: #ffffff;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+
+        .btn-action {
+            width: 48px;
+            height: 48px;
+            background: white;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid #f1f5f9;
+        }
+
+        .btn-action.active { background: #2563eb; color: white; border-color: #2563eb; }
+
+        .toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #0f172a;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 12px;
+            z-index: 10000;
+            display: none;
+            font-size: 13px;
+            font-weight: bold;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        
+        .leaflet-touch .leaflet-control-layers, .leaflet-touch .leaflet-bar { border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body>
+
+    <div id="loading" class="loading-screen">
+        <div class="relative">
+            <div class="w-20 h-20 border-4 border-slate-100 rounded-full"></div>
+            <div class="w-20 h-20 border-4 border-blue-600 border-t-transparent rounded-full animate-spin absolute top-0"></div>
+        </div>
+        <h2 class="text-2xl font-black text-slate-900 mt-6">GIS Saladin</h2>
+        <p class="text-slate-400 text-sm mt-2">جاري تهيئة البيانات الميدانية...</p>
+    </div>
+
+    <div id="toast" class="toast">تم النسخ بنجاح</div>
+
+    <div id="map"></div>
+
+    <!-- Mobile Menu Toggle -->
+    <button onclick="toggleSearch()" class="md:hidden fixed top-5 right-5 z-[1200] bg-white p-3 rounded-2xl shadow-xl border border-slate-100">
+        <svg id="menuIcon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-slate-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
+        </svg>
+    </button>
+
+    <!-- Floating Tools -->
+    <div class="fixed top-20 right-5 z-[1000] flex flex-col gap-3">
+        <div onclick="toggleLocation()" id="locBtn" class="btn-action text-slate-700">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+            </svg>
+        </div>
+    </div>
+
+    <!-- Search Panel / Bottom Sheet -->
+    <div id="searchPanel" class="search-panel">
+        <div class="drag-handle md:hidden"></div>
+        
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-xl font-black text-slate-900">نظام البحث الجغرافي</h1>
+                <p id="counter" class="text-[10px] text-blue-600 font-bold tracking-tighter uppercase">البيانات جاهزة للاستخدام</p>
+            </div>
+            <div class="bg-blue-50 text-blue-600 p-2.5 rounded-xl">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m6 13l5.447-2.724A1 1 0 0021 16.382V5.618a1 1 0 00-1.447-.894L15 7m-6 0l6 2m-6 0V4m0 16V9m6 0v10" />
+                </svg>
+            </div>
+        </div>
+
+        <div class="space-y-4">
+            <!-- Filter Type -->
+            <div class="grid grid-cols-3 gap-2 p-1.5 bg-slate-100 rounded-2xl">
+                <button onclick="setFilter('ALL')" id="f-ALL" class="py-2.5 text-[11px] font-bold rounded-xl transition-all bg-white shadow-sm text-blue-600">الكل</button>
+                <button onclick="setFilter('FAT')" id="f-FAT" class="py-2.5 text-[11px] font-bold rounded-xl transition-all text-slate-500">FAT</button>
+                <button onclick="setFilter('FTK')" id="f-FTK" class="py-2.5 text-[11px] font-bold rounded-xl transition-all text-slate-500">FTK</button>
+            </div>
+
+            <!-- Name Search -->
+            <div class="relative">
+                <input type="text" id="mainSearch" list="zonesData" placeholder="ابحث بالاسم (مثلاً FTK0003)" 
+                       class="w-full bg-slate-50 border-none p-4 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all pr-12">
+                <div class="absolute right-4 bottom-4 text-slate-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </div>
+                <datalist id="zonesData"></datalist>
+            </div>
+
+            <button onclick="locateZone()" class="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-sm hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 active:scale-[0.97]">
+                تحديد المنطقة
+            </button>
+
+            <!-- Coordinate Search -->
+            <div class="pt-4 border-t border-slate-100 mt-2">
+                <p class="text-[10px] font-bold text-slate-400 mb-3 mr-1 uppercase">انتقال سريع للإحداثيات</p>
+                <div class="flex gap-2">
+                    <input type="text" id="coordsInput" placeholder="خط العرض, خط الطول" 
+                           class="flex-grow bg-slate-50 p-3.5 rounded-xl text-center text-xs font-mono outline-none border-none focus:ring-2 focus:ring-emerald-500">
+                    <button onclick="gotoCoords()" class="bg-slate-900 text-white px-5 rounded-xl text-xs font-bold active:scale-95 transition-all">انتقال</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+
+    <script>
+        let map;
+        let layerFAT, layerFTK;
+        let featuresStore = [];
+        let currentFilter = 'ALL';
+        let watchId = null;
+        let userMarker = null;
+        let currentPin = null;
+
+        const CSV_URL = 'https://raw.githubusercontent.com/Beezincbeta/m/refs/heads/main/sd_data.csv';
+
+        function init() {
+            // تهيئة الخريطة بإعدادات أفضل للهاتف
+            map = L.map('map', { 
+                zoomControl: false, 
+                attributionControl: false,
+                tap: true
+            }).setView([34.66, 43.65], 14);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+            // إعداد طبقات العرض
+            map.createPane('paneFAT').style.zIndex = 650;
+            map.createPane('paneFTK').style.zIndex = 400;
+
+            layerFTK = L.geoJSON(null, {
+                pane: 'paneFTK',
+                style: () => ({ color: '#000000', weight: 1.5, fillColor: '#3b82f6', fillOpacity: 0.25 }),
+                onEachFeature: bindFeature
+            }).addTo(map);
+
+            layerFAT = L.geoJSON(null, {
+                pane: 'paneFAT',
+                style: { color: '#b47c29', weight: 3, fillColor: '#ddaf6a', fillOpacity: 0.3, dashArray: '1, 3, 1' },
+                onEachFeature: bindFeature
+            }).addTo(map);
+
+            loadCSV();
+        }
+
+        function bindFeature(f, l) {
+            const name = f.properties.Name;
+            l.bindPopup(`<div class="text-xs font-bold px-2 py-1">${name}</div>`, { 
+                closeButton: false, 
+                className: 'custom-popup' 
+            });
+            
+            l.on('click', (e) => {
+                L.DomEvent.stopPropagation(e);
+                copyToClipboard(e.latlng, name);
+            });
+        }
+
+        function loadCSV() {
+            Papa.parse(CSV_URL, {
+                download: true, header: true, skipEmptyLines: true,
+                complete: (res) => {
+                    processData(res.data);
+                    document.getElementById('loading').style.display = 'none';
+                    // إخفاء لوحة البحث تلقائياً على الهاتف بعد التحميل لتوضيح الخريطة
+                    if(window.innerWidth < 768) setTimeout(toggleSearch, 1000);
+                }
+            });
+        }
+
+        function processData(data) {
+            data.forEach(row => {
+                try {
+                    const geo = JSON.parse(row.geometry.replace(/""/g, '"'));
+                    const name = row.Name.trim().toUpperCase();
+                    const isFat = name.startsWith('FAT');
+                    const feat = { type: "Feature", geometry: geo, properties: { Name: name } };
+
+                    if (isFat) layerFAT.addData(feat);
+                    else layerFTK.addData(feat);
+                } catch (e) {}
+            });
+
+            // مزامنة البيانات للبحث
+            const sync = (layerGroup, type) => {
+                layerGroup.eachLayer(l => {
+                    featuresStore.push({
+                        name: l.feature.properties.Name,
+                        type: type,
+                        layer: l,
+                        bounds: l.getBounds()
+                    });
+                });
+            };
+            sync(layerFAT, 'FAT');
+            sync(layerFTK, 'FTK');
+            updateDatalist();
+        }
+
+        function setFilter(type) {
+            currentFilter = type;
+            ['ALL', 'FAT', 'FTK'].forEach(id => {
+                const el = document.getElementById('f-' + id);
+                el.classList.remove('bg-white', 'shadow-sm', 'text-blue-600');
+                el.classList.add('text-slate-500');
+            });
+            const active = document.getElementById('f-' + type);
+            active.classList.add('bg-white', 'shadow-sm', 'text-blue-600');
+            active.classList.remove('text-slate-500');
+            updateDatalist();
+        }
+
+        function updateDatalist() {
+            const list = document.getElementById('zonesData');
+            list.innerHTML = '';
+            featuresStore
+                .filter(f => currentFilter === 'ALL' || f.type === currentFilter)
+                .sort((a,b) => a.name.localeCompare(b.name))
+                .forEach(f => {
+                    const opt = document.createElement('option');
+                    opt.value = f.name;
+                    list.appendChild(opt);
+                });
+        }
+
+        function locateZone() {
+            const val = document.getElementById('mainSearch').value.toUpperCase();
+            const target = featuresStore.find(f => f.name === val);
+            if (target) {
+                map.fitBounds(target.bounds, { padding: [40, 40] });
+                target.layer.openPopup();
+                
+                // تمييز بصري
+                const original = {...target.layer.options};
+                target.layer.setStyle({ color: '#fff', weight: 8, fillOpacity: 0.6 });
+                setTimeout(() => target.layer.setStyle(original), 2000);
+
+                if (window.innerWidth < 768) toggleSearch();
+            }
+        }
+
+        function gotoCoords() {
+            const val = document.getElementById('coordsInput').value;
+            const p = val.split(/[\s,]+/);
+            if (p.length >= 2) {
+                const lat = parseFloat(p[0]), lng = parseFloat(p[1]);
+                if (!isNaN(lat) && !isNaN(lng)) {
+                    if(currentPin) map.removeLayer(currentPin);
+                    
+                    // البحث عن اسم المنطقة التي تقع فيها هذه الإحداثيات
+                    let foundName = "موقع غير محدد";
+                    for (let f of featuresStore) {
+                        if (f.bounds.contains([lat, lng])) {
+                            foundName = f.name;
+                            break;
+                        }
+                    }
+
+                    map.setView([lat, lng], 17);
+                    currentPin = L.marker([lat, lng]).addTo(map)
+                        .bindPopup(`<div class='text-xs font-bold'>${foundName}</div>`)
+                        .openPopup();
+                    
+                    if (window.innerWidth < 768) toggleSearch();
+                }
+            }
+        }
+
+        function copyToClipboard(ll, name) {
+            const str = `${ll.lat.toFixed(8)}, ${ll.lng.toFixed(8)}`;
+            const el = document.createElement('textarea');
+            el.value = str; document.body.appendChild(el); el.select();
+            document.execCommand('copy'); document.body.removeChild(el);
+            
+            const t = document.getElementById('toast');
+            t.innerText = `تم النسخ: ${name}`;
+            t.style.display = 'block';
+            setTimeout(() => t.style.display = 'none', 3000);
+        }
+
+        function toggleSearch() {
+            document.getElementById('searchPanel').classList.toggle('search-hidden');
+            const icon = document.getElementById('menuIcon');
+            if(document.getElementById('searchPanel').classList.contains('search-hidden')) {
+                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />';
+            } else {
+                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />';
+            }
+        }
+
+        function toggleLocation() {
+            const btn = document.getElementById('locBtn');
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+                if (userMarker) map.removeLayer(userMarker);
+                btn.classList.remove('active');
+            } else {
+                btn.classList.add('active');
+                watchId = navigator.geolocation.watchPosition(pos => {
+                    const ll = [pos.coords.latitude, pos.coords.longitude];
+                    if (!userMarker) {
+                        userMarker = L.circleMarker(ll, { radius: 9, color: '#fff', weight: 3, fillColor: '#2563eb', fillOpacity: 1 }).addTo(map);
+                        map.setView(ll, 16);
+                    } else userMarker.setLatLng(ll);
+                }, null, { enableHighAccuracy: true });
+            }
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>

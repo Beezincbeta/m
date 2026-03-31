@@ -294,7 +294,7 @@
                     <span class="text-xs font-bold text-slate-700">FTK</span>
                 </label>
                 <label class="flex items-center gap-2 cursor-pointer flex-1">
-                    <input type="checkbox" id="togglePopups" checked class="w-4 h-4 rounded border-slate-300 accent-green-500">
+                    <input type="checkbox" id="togglePopups" class="w-4 h-4 rounded border-slate-300 accent-green-500">
                     <span class="text-xs font-bold text-slate-700">أسماء</span>
                 </label>
             </div>
@@ -354,7 +354,7 @@
         let featuresStore = [];
         let currentFilter = 'ALL';
         let layerVisibility = { FAT: true, FTK: true };
-        let popupVisibility = true;
+        let popupVisibility = false;
         let openPopups = new Map();
 
         // ===== Layer Toggle Functions =====
@@ -388,23 +388,58 @@
             const isChecked = document.getElementById('togglePopups').checked;
             popupVisibility = isChecked;
             
-            // Iterate through all layers and open/close popups
-            const toggleLayerPopups = (layer) => {
-                layer.eachLayer((l) => {
-                    if (l.getPopup && l.getPopup()) {
-                        if (isChecked) {
-                            l.openPopup();
-                        } else {
-                            l.closePopup();
+            if (isChecked) {
+                // Open popups in batches to avoid crashes
+                const allLayers = [];
+                
+                const collectLayers = (layer) => {
+                    layer.eachLayer((l) => {
+                        if (l.getPopup && l.getPopup()) {
+                            allLayers.push(l);
+                        }
+                    });
+                };
+                
+                collectLayers(layerFAT);
+                collectLayers(layerFTK);
+                
+                // Open in small batches with delays
+                let index = 0;
+                const batchSize = 5;
+                const openBatch = () => {
+                    const end = Math.min(index + batchSize, allLayers.length);
+                    for (let i = index; i < end; i++) {
+                        try {
+                            allLayers[i].openPopup();
+                        } catch (e) {
+                            console.warn('Popup open error:', e);
                         }
                     }
-                });
-            };
-            
-            toggleLayerPopups(layerFAT);
-            toggleLayerPopups(layerFTK);
-            
-            showToast(isChecked ? 'عرض الأسماء' : 'إخفاء الأسماء');
+                    index = end;
+                    if (index < allLayers.length) {
+                        requestAnimationFrame(openBatch);
+                    }
+                };
+                openBatch();
+                showToast('عرض الأسماء');
+            } else {
+                // Close all popups immediately
+                const closeLayers = (layer) => {
+                    layer.eachLayer((l) => {
+                        if (l.getPopup && l.getPopup()) {
+                            try {
+                                l.closePopup();
+                            } catch (e) {
+                                console.warn('Popup close error:', e);
+                            }
+                        }
+                    });
+                };
+                
+                closeLayers(layerFAT);
+                closeLayers(layerFTK);
+                showToast('إخفاء الأسماء');
+            }
         }
 
         // ===== Initialize =====
@@ -483,10 +518,7 @@
                 copyToClipboard(e.latlng, name);
             });
             
-            // Open popup immediately if popups are visible
-            if (popupVisibility) {
-                l.openPopup();
-            }
+            // Don't open popups here - handle in batch after load
         }
 
         function loadCSV() {
@@ -569,19 +601,6 @@
             sync(layerFAT, 'FAT');
             sync(layerFTK, 'FTK');
             updateDatalist();
-            
-            // Open all popups after data is loaded
-            if (popupVisibility) {
-                const openAllPopups = (layer) => {
-                    layer.eachLayer((l) => {
-                        if (l.getPopup && l.getPopup()) {
-                            l.openPopup();
-                        }
-                    });
-                };
-                openAllPopups(layerFAT);
-                openAllPopups(layerFTK);
-            }
             
             document.getElementById('counter').textContent = `${count} منطقة محملة`;
         }

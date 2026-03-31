@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="true">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#ffffff">
+    <title>GIS Saladin - Mobile Optimized</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PapaParse for CSV -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap');
+        
+        * { -webkit-tap-highlight-color: transparent; }
+        
+        body {
+            font-family: 'Tajawal', sans-serif;
+            height: 100vh;
+            height: 100dvh;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background-color: #f8fafc;
+            position: fixed;
+            width: 100%;
+        }
+
+        #map { 
+            flex-grow: 1; 
+            z-index: 1;
+            touch-action: manipulation;
+        }
+
+        /* Enhanced Bottom Sheet for Mobile */
+        .search-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 1100;
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-top: 1px solid rgba(0,0,0,0.05);
+            border-radius: 28px 28px 0 0;
+            box-shadow: 0 -10px 40px rgba(0,0,0,0.1);
+            padding: 16px 16px 20px;
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            max-height: 80vh;
+            overflow-y: auto;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
+            padding-bottom: max(20px, env(safe-area-inset-bottom));
+        }
+
+        .search-panel::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .search-panel::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .search-panel::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 2px;
+        }
+
+        @media (min-width: 768px) {
+            .search-panel {
+                top: 20px;
+                right: 20px;
+                left: auto;
+                bottom: auto;
+                width: 400px;
+                max-height: 85vh;
+                border-radius: 24px;
+                border: 1px solid rgba(0,0,0,0.05);
+                padding: 24px;
+                padding-bottom: 24px;
+            }
+        }
+
+        .search-hidden { 
+            transform: translateY(100%);
+            pointer-events: none;
+        }
+        
+        @media (min-width: 768px) { 
+            .search-hidden { 
+                transform: translateY(-150%); 
+                opacity: 0; 
+            } 
+        }
+
+        /* Enhanced Drag Handle */
+        .drag-handle {
+            width: 40px;
+            height: 4px;
+            background: #e2e8f0;
+            border-radius: 10px;
+            margin: -8px auto 14px;
+            cursor: grab;
+            transition: background 0.2s;
+        }
+
+        .drag-handle:active {
+            background: #cbd5e1;
+            cursor: grabbing;
+        }
+
+        /* Popup Styling */
+        .custom-popup .leaflet-popup-content-wrapper {
+            border-radius: 16px;
+            background: #1e293b;
+            color: white;
+            padding: 6px 0;
+            border: none;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+        }
+
+        .custom-popup .leaflet-popup-tip {
+            background: #1e293b;
+            border: none;
+        }
+
+        .loading-screen {
+            position: fixed;
+            inset: 0;
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            animation: fadeOut 0.3s ease-out 2.5s forwards;
+        }
+
+        @keyframes fadeOut {
+            to { opacity: 0; pointer-events: none; }
+        }
+
+        .btn-action {
+            width: 48px;
+            height: 48px;
+            background: white;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid #f1f5f9;
+            flex-shrink: 0;
+        }
+
+        .btn-action:active {
+            transform: scale(0.95);
+        }
+
+        .btn-action.active { 
+            background: #2563eb; 
+            color: white; 
+            border-color: #2563eb;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+        }
+
+        .toast {
+            position: fixed;
+            top: max(20px, env(safe-area-inset-top));
+            left: 50%;
+            transform: translateX(-50%);
+            background: #0f172a;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 12px;
+            z-index: 10000;
+            display: none;
+            font-size: 13px;
+            font-weight: bold;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+            animation: slideDown 0.3s ease-out, slideUp 0.3s ease-out 2.7s forwards;
+        }
+
+        @keyframes slideDown {
+            from { transform: translateX(-50%) translateY(-20px); opacity: 0; }
+            to { transform: translateX(-50%) translateY(0); opacity: 1; }
+        }
+
+        @keyframes slideUp {
+            to { transform: translateX(-50%) translateY(-20px); opacity: 0; }
+        }
+
+        .leaflet-touch .leaflet-control-layers, 
+        .leaflet-touch .leaflet-bar { 
+            border: none; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            border-radius: 16px;
+        }
+
+        /* Input focus states for mobile */
+        input:focus, textarea:focus {
+            outline: none;
+            box-shadow: inset 0 0 0 2px #2563eb;
+        }
+
+        /* Menu button responsive */
+        .menu-btn {
+            touch-action: manipulation;
+        }
+
+        @media (max-width: 767px) {
+            /* Ensure buttons are at least 44px for easy tapping */
+            .btn-action, .menu-btn, button {
+                min-height: 44px;
+                min-width: 44px;
+            }
+        }
+
+        /* Safe area padding for notched devices */
+        @supports (padding: max(0px)) {
+            body {
+                padding-top: env(safe-area-inset-top);
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loading" class="loading-screen">
+        <div class="relative">
+            <div class="w-20 h-20 border-4 border-slate-100 rounded-full"></div>
+            <div class="w-20 h-20 border-4 border-blue-600 border-t-transparent rounded-full animate-spin absolute top-0"></div>
+        </div>
+        <h2 class="text-2xl font-black text-slate-900 mt-6">GIS Saladin</h2>
+        <p class="text-slate-400 text-sm mt-2">جاري تهيئة البيانات الميدانية...</p>
+    </div>
+
+    <div id="toast" class="toast">تم النسخ بنجاح</div>
+
+    <div id="map"></div>
+
+    <!-- Mobile Menu Toggle -->
+    <button id="menuBtn" class="menu-btn md:hidden fixed z-[1200] bg-white p-3 rounded-2xl shadow-xl border border-slate-100 transition-all active:scale-95" 
+            style="top: max(20px, calc(env(safe-area-inset-top) + 10px)); right: 20px;">
+        <svg id="menuIcon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-slate-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
+        </svg>
+    </button>
+
+    <!-- Floating Tools -->
+    <div class="fixed z-[1000] flex flex-col gap-3" style="top: max(80px, calc(env(safe-area-inset-top) + 70px)); right: 20px;">
+        <div id="locBtn" class="btn-action text-slate-700 cursor-pointer">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+            </svg>
+        </div>
+    </div>
+
+    <!-- Search Panel / Bottom Sheet -->
+    <div id="searchPanel" class="search-panel">
+        <div class="drag-handle md:hidden"></div>
+        
+        <div class="flex items-center justify-between mb-6">
+            <div class="flex-1">
+                <h1 class="text-xl font-black text-slate-900">نظام البحث الجغرافي</h1>
+                <p id="counter" class="text-xs text-blue-600 font-bold tracking-tighter uppercase mt-1">البيانات جاهزة للاستخدام</p>
+            </div>
+            <div class="bg-blue-50 text-blue-600 p-2.5 rounded-xl flex-shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m6 13l5.447-2.724A1 1 0 0021 16.382V5.618a1 1 0 00-1.447-.894L15 7m-6 0l6 2m-6 0V4m0 16V9m6 0v10" />
+                </svg>
+            </div>
+        </div>
+
+        <div class="space-y-4">
+            <!-- Layer Visibility Toggle -->
+            <div class="flex gap-2 p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                <label class="flex items-center gap-2 cursor-pointer flex-1">
+                    <input type="checkbox" id="toggleFAT" checked class="w-4 h-4 rounded border-slate-300 accent-amber-500">
+                    <span class="text-xs font-bold text-slate-700">FAT</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer flex-1">
+                    <input type="checkbox" id="toggleFTK" checked class="w-4 h-4 rounded border-slate-300 accent-blue-500">
+                    <span class="text-xs font-bold text-slate-700">FTK</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer flex-1">
+                    <input type="checkbox" id="togglePopups" checked class="w-4 h-4 rounded border-slate-300 accent-green-500">
+                    <span class="text-xs font-bold text-slate-700">أسماء</span>
+                </label>
+            </div>
+
+            <!-- Filter Type -->
+            <div class="grid grid-cols-3 gap-2 p-1.5 bg-slate-100 rounded-2xl">
+                <button onclick="setFilter('ALL')" id="f-ALL" class="py-2.5 text-xs font-bold rounded-xl transition-all bg-white shadow-sm text-blue-600 active:scale-95">الكل</button>
+                <button onclick="setFilter('FAT')" id="f-FAT" class="py-2.5 text-xs font-bold rounded-xl transition-all text-slate-500 active:scale-95">FAT</button>
+                <button onclick="setFilter('FTK')" id="f-FTK" class="py-2.5 text-xs font-bold rounded-xl transition-all text-slate-500 active:scale-95">FTK</button>
+            </div>
+
+            <!-- Name Search -->
+            <div class="relative">
+                <input type="text" id="mainSearch" list="zonesData" placeholder="ابحث بالاسم (مثلاً FTK0003)" 
+                       class="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all pr-12"
+                       inputmode="text">
+                <div class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </div>
+                <datalist id="zonesData"></datalist>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex gap-2">
+                <button onclick="locateZone()" class="flex-1 bg-blue-600 text-white py-3 rounded-2xl font-bold text-sm transition-all active:scale-95 shadow-sm">
+                    بحث
+                </button>
+                <button onclick="document.getElementById('mainSearch').value = ''" class="flex-1 bg-slate-100 text-slate-700 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95">
+                    مسح
+                </button>
+            </div>
+
+            <!-- Coordinates Section -->
+            <div class="border-t border-slate-100 pt-4 mt-4">
+                <h3 class="text-xs font-bold text-slate-600 mb-3 uppercase">إحداثيات جغرافية</h3>
+                <div class="flex gap-2 mb-2">
+                    <input type="text" id="coordsInput" placeholder="مثال: 34.1956, 44.3661" 
+                           class="flex-1 bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                           inputmode="decimal">
+                    <button onclick="gotoCoords()" class="bg-amber-500 text-white px-4 py-3 rounded-xl font-bold text-xs transition-all active:scale-95">
+                        انتقل
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // ===== Configuration =====
+        const CSV_URL = 'https://raw.githubusercontent.com/Beezincbeta/m/refs/heads/main/sd_data.csv';
+        
+        // ===== State =====
+        let map, layerFAT, layerFTK, currentPin, userMarker, watchId = null;
+        let featuresStore = [];
+        let currentFilter = 'ALL';
+        let layerVisibility = { FAT: true, FTK: true };
+        let popupVisibility = true;
+        let openPopups = new Map();
+
+        // ===== Layer Toggle Functions =====
+        function toggleLayerFAT() {
+            const isChecked = document.getElementById('toggleFAT').checked;
+            layerVisibility.FAT = isChecked;
+            
+            if (isChecked) {
+                map.addLayer(layerFAT);
+                showToast('عرض FAT');
+            } else {
+                map.removeLayer(layerFAT);
+                showToast('إخفاء FAT');
+            }
+        }
+
+        function toggleLayerFTK() {
+            const isChecked = document.getElementById('toggleFTK').checked;
+            layerVisibility.FTK = isChecked;
+            
+            if (isChecked) {
+                map.addLayer(layerFTK);
+                showToast('عرض FTK');
+            } else {
+                map.removeLayer(layerFTK);
+                showToast('إخفاء FTK');
+            }
+        }
+
+        function togglePopups() {
+            const isChecked = document.getElementById('togglePopups').checked;
+            popupVisibility = isChecked;
+            
+            // Iterate through all layers and open/close popups
+            const toggleLayerPopups = (layer) => {
+                layer.eachLayer((l) => {
+                    if (l.getPopup && l.getPopup()) {
+                        if (isChecked) {
+                            l.openPopup();
+                        } else {
+                            l.closePopup();
+                        }
+                    }
+                });
+            };
+            
+            toggleLayerPopups(layerFAT);
+            toggleLayerPopups(layerFTK);
+            
+            showToast(isChecked ? 'عرض الأسماء' : 'إخفاء الأسماء');
+        }
+
+        // ===== Initialize =====
+        function init() {
+            map = L.map('map', {
+                center: [34.1956, 44.3661],
+                zoom: 10,
+                zoomControl: false,
+                attributionControl: false,
+                dragging: true,
+                touchZoom: true,
+                doubleClickZoom: true,
+                scrollWheelZoom: false
+            });
+
+            // Add zoom control on mobile to bottom-left, desktop to bottom-right
+            if (window.innerWidth < 768) {
+                L.control.zoom({ position: 'bottomright' }).addTo(map);
+            } else {
+                L.control.zoom({ position: 'bottomright' }).addTo(map);
+            }
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap',
+                maxZoom: 19
+            }).addTo(map);
+
+            // Setup panes
+            map.createPane('paneFAT').style.zIndex = 650;
+            map.createPane('paneFTK').style.zIndex = 400;
+
+            layerFTK = L.geoJSON(null, {
+                pane: 'paneFTK',
+                style: () => ({ color: '#000000', weight: 1.5, fillColor: '#3b82f6', fillOpacity: 0.25 }),
+                onEachFeature: bindFeature
+            }).addTo(map);
+
+            layerFAT = L.geoJSON(null, {
+                pane: 'paneFAT',
+                style: { color: '#b47c29', weight: 3, fillColor: '#ddaf6a', fillOpacity: 0.3, dashArray: '1, 3, 1' },
+                onEachFeature: bindFeature
+            }).addTo(map);
+
+            // Event listeners
+            document.getElementById('menuBtn').addEventListener('click', toggleSearch);
+            document.getElementById('locBtn').addEventListener('click', toggleLocation);
+            document.getElementById('toggleFAT').addEventListener('change', toggleLayerFAT);
+            document.getElementById('toggleFTK').addEventListener('change', toggleLayerFTK);
+            document.getElementById('togglePopups').addEventListener('change', togglePopups);
+            document.getElementById('mainSearch').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') locateZone();
+            });
+            document.getElementById('coordsInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') gotoCoords();
+            });
+
+            loadCSV();
+        }
+
+        function bindFeature(f, l) {
+            const name = f.properties.Name;
+            
+            l.bindPopup(`<div class="text-xs font-bold text-center px-3 py-2">${name}</div>`, { 
+                closeButton: false, 
+                className: 'custom-popup',
+                closeOnClick: false,
+                autoPan: false,
+                autoClose: false
+            });
+            
+            // Store popup reference
+            openPopups.set(name, l);
+            
+            l.on('click', (e) => {
+                L.DomEvent.stopPropagation(e);
+                copyToClipboard(e.latlng, name);
+            });
+            
+            // Open popup immediately if popups are visible
+            if (popupVisibility) {
+                l.openPopup();
+            }
+        }
+
+        function loadCSV() {
+            Papa.parse(CSV_URL, {
+                download: true,
+                header: true,
+                skipEmptyLines: true,
+                worker: true,
+                complete: (res) => {
+                    if (res.data && res.data.length > 0) {
+                        processData(res.data);
+                        document.getElementById('loading').style.display = 'none';
+                        
+                        // Auto-hide search panel on mobile after load
+                        if (window.innerWidth < 768) {
+                            setTimeout(() => {
+                                if (!document.getElementById('searchPanel').classList.contains('search-hidden')) {
+                                    document.getElementById('searchPanel').classList.add('search-hidden');
+                                    updateMenuIcon();
+                                }
+                            }, 800);
+                        }
+                    } else {
+                        showToast('فشل تحميل البيانات');
+                        document.getElementById('loading').style.display = 'none';
+                    }
+                },
+                error: (err) => {
+                    console.error('CSV Parse Error:', err);
+                    showToast('خطأ في تحميل البيانات');
+                    document.getElementById('loading').style.display = 'none';
+                }
+            });
+        }
+
+        function processData(data) {
+            let count = 0;
+            data.forEach((row, idx) => {
+                try {
+                    if (!row.geometry || !row.Name) {
+                        console.warn(`Row ${idx}: Missing geometry or Name`);
+                        return;
+                    }
+                    
+                    const geo = JSON.parse(row.geometry.replace(/""/g, '"'));
+                    
+                    // Validate geometry type
+                    if (!geo.type || !geo.coordinates) {
+                        console.warn(`Row ${idx}: Invalid geometry structure`);
+                        return;
+                    }
+                    
+                    const name = row.Name.trim().toUpperCase();
+                    if (!name) return;
+                    
+                    const isFat = name.startsWith('FAT');
+                    const feat = { type: "Feature", geometry: geo, properties: { Name: name } };
+
+                    if (isFat) layerFAT.addData(feat);
+                    else layerFTK.addData(feat);
+                    count++;
+                } catch (e) {
+                    console.warn(`Row ${idx} parse error:`, e.message);
+                }
+            });
+
+            // Sync features
+            const sync = (layerGroup, type) => {
+                layerGroup.eachLayer(l => {
+                    if (l.feature && l.feature.properties) {
+                        featuresStore.push({
+                            name: l.feature.properties.Name,
+                            type: type,
+                            layer: l,
+                            bounds: l.getBounds()
+                        });
+                    }
+                });
+            };
+            sync(layerFAT, 'FAT');
+            sync(layerFTK, 'FTK');
+            updateDatalist();
+            
+            // Open all popups after data is loaded
+            if (popupVisibility) {
+                const openAllPopups = (layer) => {
+                    layer.eachLayer((l) => {
+                        if (l.getPopup && l.getPopup()) {
+                            l.openPopup();
+                        }
+                    });
+                };
+                openAllPopups(layerFAT);
+                openAllPopups(layerFTK);
+            }
+            
+            document.getElementById('counter').textContent = `${count} منطقة محملة`;
+        }
+
+        function setFilter(type) {
+            currentFilter = type;
+            ['ALL', 'FAT', 'FTK'].forEach(id => {
+                const el = document.getElementById('f-' + id);
+                el.classList.remove('bg-white', 'shadow-sm', 'text-blue-600');
+                el.classList.add('text-slate-500');
+            });
+            const active = document.getElementById('f-' + type);
+            active.classList.add('bg-white', 'shadow-sm', 'text-blue-600');
+            active.classList.remove('text-slate-500');
+            updateDatalist();
+        }
+
+        function updateDatalist() {
+            const list = document.getElementById('zonesData');
+            list.innerHTML = '';
+            featuresStore
+                .filter(f => currentFilter === 'ALL' || f.type === currentFilter)
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .forEach(f => {
+                    const opt = document.createElement('option');
+                    opt.value = f.name;
+                    list.appendChild(opt);
+                });
+        }
+
+        function locateZone() {
+            const val = document.getElementById('mainSearch').value.toUpperCase().trim();
+            if (!val) {
+                showToast('أدخل اسم المنطقة');
+                return;
+            }
+            
+            const target = featuresStore.find(f => f.name === val);
+            if (target) {
+                try {
+                    map.fitBounds(target.bounds, { padding: [60, 60], maxZoom: 16 });
+                    
+                    // Highlight with proper style restoration
+                    if (target.type === 'FAT') {
+                        const origStyle = { color: '#b47c29', weight: 3, fillColor: '#ddaf6a', fillOpacity: 0.3 };
+                        target.layer.setStyle({ color: '#fff', weight: 6, fillOpacity: 0.6 });
+                        setTimeout(() => target.layer.setStyle(origStyle), 1500);
+                    } else {
+                        const origStyle = { color: '#000000', weight: 1.5, fillColor: '#3b82f6', fillOpacity: 0.25 };
+                        target.layer.setStyle({ color: '#fff', weight: 5, fillOpacity: 0.5 });
+                        setTimeout(() => target.layer.setStyle(origStyle), 1500);
+                    }
+                    
+                    if (window.innerWidth < 768) {
+                        setTimeout(() => toggleSearch(), 500);
+                    }
+                } catch (e) {
+                    console.error('Locate error:', e);
+                    showToast('خطأ في العثور على المنطقة');
+                }
+            } else {
+                showToast('لم يتم العثور على المنطقة');
+            }
+        }
+
+        function gotoCoords() {
+            const val = document.getElementById('coordsInput').value.trim();
+            if (!val) {
+                showToast('أدخل الإحداثيات');
+                return;
+            }
+            
+            const p = val.split(/[\s,]+/);
+            if (p.length < 2) {
+                showToast('صيغة خاطئة: استخدم (wide, long)');
+                return;
+            }
+            
+            const lat = parseFloat(p[0]), lng = parseFloat(p[1]);
+            if (isNaN(lat) || isNaN(lng)) {
+                showToast('إحداثيات غير صحيحة');
+                return;
+            }
+            
+            if (lat < -90 || lat > 90) {
+                showToast('العرض يجب أن يكون بين -90 و 90');
+                return;
+            }
+            
+            if (lng < -180 || lng > 180) {
+                showToast('الطول يجب أن يكون بين -180 و 180');
+                return;
+            }
+            
+            if (currentPin) {
+                map.removeLayer(currentPin);
+                currentPin = null;
+            }
+            
+            let foundName = "موقع غير محدد";
+            let foundZone = null;
+            
+            for (let f of featuresStore) {
+                try {
+                    if (f.bounds && f.bounds.contains([lat, lng])) {
+                        foundName = f.name;
+                        foundZone = f;
+                        break;
+                    }
+                } catch (e) {
+                    // bounds check error
+                }
+            }
+
+            map.setView([lat, lng], 16);
+            currentPin = L.marker([lat, lng], {
+                icon: L.icon({
+                    iconUrl: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCAzMiA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMzIiIGhlaWdodD0iNDgiIHJ4PSI0IiBmaWxsPSIjMjU2M2ViIi8+PGNpcmNsZSBjeD0iMTYiIGN5PSIyMCIgcj0iOCIgZmlsbD0id2hpdGUiLz48L3N2Zz4=',
+                    iconSize: [32, 48],
+                    iconAnchor: [16, 48],
+                    popupAnchor: [0, -48]
+                })
+            }).addTo(map)
+                .bindPopup(`<div class='text-xs font-bold px-2 py-1'>${foundName}</div>`, { 
+                    closeButton: false,
+                    className: 'custom-popup'
+                })
+                .openPopup();
+            
+            showToast(`تم تحديد: ${foundName}`);
+            
+            if (window.innerWidth < 768) {
+                setTimeout(() => toggleSearch(), 500);
+            }
+        }
+
+        function copyToClipboard(ll, name) {
+            const str = `${ll.lat.toFixed(8)}, ${ll.lng.toFixed(8)}`;
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(str).then(() => {
+                    showToast(`تم النسخ: ${name}`);
+                });
+            } else {
+                // Fallback for older browsers
+                const el = document.createElement('textarea');
+                el.value = str;
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+                showToast(`تم النسخ: ${name}`);
+            }
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.style.display = 'block';
+            setTimeout(() => t.style.display = 'none', 3000);
+        }
+
+        function toggleSearch() {
+            document.getElementById('searchPanel').classList.toggle('search-hidden');
+            updateMenuIcon();
+        }
+
+        function updateMenuIcon() {
+            const icon = document.getElementById('menuIcon');
+            const isHidden = document.getElementById('searchPanel').classList.contains('search-hidden');
+            if (isHidden) {
+                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />';
+            } else {
+                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />';
+            }
+        }
+
+        function toggleLocation() {
+            const btn = document.getElementById('locBtn');
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+                if (userMarker) map.removeLayer(userMarker);
+                btn.classList.remove('active');
+                showToast('تم إيقاف تتبع الموقع');
+            } else {
+                btn.classList.add('active');
+                watchId = navigator.geolocation.watchPosition(
+                    pos => {
+                        const ll = [pos.coords.latitude, pos.coords.longitude];
+                        if (!userMarker) {
+                            userMarker = L.circleMarker(ll, { 
+                                radius: 9, 
+                                color: '#fff', 
+                                weight: 3, 
+                                fillColor: '#2563eb', 
+                                fillOpacity: 1 
+                            }).addTo(map);
+                            map.setView(ll, 16);
+                        } else {
+                            userMarker.setLatLng(ll);
+                        }
+                    },
+                    err => {
+                        console.error('Geolocation error:', err);
+                        btn.classList.remove('active');
+                        showToast('خطأ في الموقع');
+                    },
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                );
+            }
+        }
+
+        // Handle window resize for responsive behavior
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                if (map) map.invalidateSize();
+            }, 250);
+        });
+
+        // Initialize on load
+        window.addEventListener('load', init, { once: true });
+
+        // Prevent double-tap zoom on buttons
+        document.addEventListener('touchend', (e) => {
+            if (e.target.closest('button, input, [role="button"]')) {
+                e.preventDefault();
+            }
+        }, false);
+    </script>
+</body>
+</html>

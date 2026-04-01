@@ -149,7 +149,7 @@
     <div id="loading" class="loading-screen">
         <div class="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
         <h2 class="text-xl font-bold mt-4">GIS Saladin</h2>
-        <p class="text-slate-400 text-sm">جاري معالجة البيانات...</p>
+        <p id="loadingText" class="text-slate-400 text-sm">جاري محاولة الاتصال بالسيرفر...</p>
     </div>
 
     <div id="toast" class="toast"></div>
@@ -157,7 +157,6 @@
 
     <div id="map"></div>
 
-    <!-- Interface Buttons -->
     <button id="menuBtn" class="fixed z-[1200] bg-white p-3 rounded-2xl shadow-lg border border-slate-100" style="top: 20px; right: 20px;">
         <svg id="menuIcon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -172,14 +171,13 @@
         </button>
     </div>
 
-    <!-- Search Panel -->
     <div id="searchPanel" class="search-panel">
         <div class="drag-handle md:hidden"></div>
         
         <div class="mb-6 flex justify-between items-start">
             <div>
                 <h1 class="text-xl font-black text-slate-900">GIS Saladin</h1>
-                <p id="counter" class="text-blue-600 text-xs font-bold mt-1">جاري التحميل...</p>
+                <p id="counter" class="text-blue-600 text-xs font-bold mt-1">بانتظار البيانات...</p>
             </div>
             <div class="text-left">
                 <span id="liveStatus" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
@@ -189,7 +187,6 @@
         </div>
 
         <div class="space-y-4">
-            <!-- Layers -->
             <div class="grid grid-cols-3 gap-2 p-2 bg-slate-50 rounded-2xl border border-slate-100">
                 <label class="flex flex-col items-center gap-1 cursor-pointer">
                     <input type="checkbox" id="toggleFAT" checked class="accent-amber-500">
@@ -205,7 +202,6 @@
                 </label>
             </div>
 
-            <!-- Area Filter -->
             <select id="zoneFilter" class="w-full bg-slate-100 p-3 rounded-xl text-sm font-bold outline-none border-none">
                 <option value="">جميع المناطق (تصفية سريعة)</option>
                 <option value="tikrit">Tikrit - تكريت</option>
@@ -230,7 +226,6 @@
                 <option value="hijal">Hijal - الهيجل</option>
             </select>
 
-            <!-- Search -->
             <div class="relative">
                 <input type="text" id="mainSearch" list="zonesData" placeholder="ابحث عن اسم المنطقة..." 
                        class="w-full bg-slate-100 p-4 rounded-xl text-sm font-bold outline-none">
@@ -242,7 +237,6 @@
                 <button onclick="clearSearch()" class="flex-1 bg-slate-200 text-slate-700 py-3 rounded-xl font-bold">مسح</button>
             </div>
 
-            <!-- Coordinates -->
             <div class="pt-4 border-t border-slate-100">
                 <p class="text-[10px] font-bold text-slate-400 mb-2">الإحداثيات (Lat, Lng)</p>
                 <div class="flex gap-2">
@@ -255,7 +249,7 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        const CSV_URL = '/sd_data.csv';
+        const CSV_URL = 'https://raw.githubusercontent.com/Beezincbeta/m/main/sd_data.csv?v=' + new Date().getTime();
         
         let map, layerFAT, layerFTK, userMarker, searchMarker, watchId = null;
         let featuresStore = [];
@@ -286,14 +280,16 @@
 
         window.onload = () => {
             initMap();
-            loadData();
+            loadDataWithFetch();
             setupEvents();
             checkOnlineStatus();
         };
 
         function initMap() {
             map = L.map('map', { zoomControl: false, center: [34.6, 43.6], zoom: 10 });
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap'
+            }).addTo(map);
             
             map.createPane('fatPane');
             map.getPane('fatPane').style.zIndex = 650;
@@ -310,7 +306,68 @@
                 onEachFeature: setupFeature
             }).addTo(map);
 
-            map.on('moveend', updateCurrentZoneDisplay);
+            map.on('moveend', () => {
+                updateCurrentZoneDisplay();
+            });
+        }
+
+        async function loadDataWithFetch() {
+            const loadingText = document.getElementById('loadingText');
+            try {
+                loadingText.innerText = "جاري جلب البيانات من ...";
+                const response = await fetch(CSV_URL);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const csvString = await response.text();
+                loadingText.innerText = "جاري تحليل البيانات وتحويلها لخريطة...";
+
+                Papa.parse(csvString, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: (results) => {
+                        processData(results.data);
+                    },
+                    error: (err) => {
+                        throw new Error("فشل تحليل ملف CSV");
+                    }
+                });
+            } catch (error) {
+                console.error(error);
+                loadingText.innerHTML = `<span class="text-red-500">فشل تحميل البيانات: ${error.message}</span><br><button onclick="location.reload()" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded">إعادة المحاولة</button>`;
+            }
+        }
+
+        function processData(rows) {
+            let count = 0;
+            rows.forEach(row => {
+                try {
+                    if (!row.geometry || !row.Name) return;
+                    const geo = JSON.parse(row.geometry.replace(/""/g, '"'));
+                    const name = row.Name.toUpperCase();
+                    const feat = { type: "Feature", properties: { Name: name }, geometry: geo };
+                    const isFAT = name.startsWith('FAT');
+                    const layer = isFAT ? layerFAT : layerFTK;
+                    layer.addData(feat);
+                    
+                    const tempGeo = L.geoJSON(geo);
+                    featuresStore.push({
+                        name,
+                        type: isFAT ? 'FAT' : 'FTK',
+                        bounds: tempGeo.getBounds()
+                    });
+                    count++;
+                } catch(e) {
+                    console.warn("Skipping row due to error", e);
+                }
+            });
+            
+            if (map.hasLayer(layerFAT)) layerFAT.bringToFront();
+            updateDatalist();
+            document.getElementById('counter').innerText = `${count} منطقة محملة`;
+            const loader = document.getElementById('loading');
+            if (loader) {
+                loader.style.opacity = '0';
+                setTimeout(() => loader.remove(), 500);
+            }
         }
 
         function checkOnlineStatus() {
@@ -343,47 +400,9 @@
             });
         }
 
-        async function loadData() {
-            Papa.parse(CSV_URL, {
-                download: true,
-                header: true,
-                skipEmptyLines: true,
-                complete: (results) => {
-                    results.data.forEach(row => {
-                        try {
-                            const geo = JSON.parse(row.geometry.replace(/""/g, '"'));
-                            const name = row.Name.toUpperCase();
-                            const feat = { type: "Feature", properties: { Name: name }, geometry: geo };
-                            
-                            const isFAT = name.startsWith('FAT');
-                            const layer = isFAT ? layerFAT : layerFTK;
-                            layer.addData(feat);
-
-                            featuresStore.push({
-                                name,
-                                type: isFAT ? 'FAT' : 'FTK',
-                                bounds: L.geoJSON(geo).getBounds()
-                            });
-                        } catch(e) {}
-                    });
-                    
-                    if (map.hasLayer(layerFAT)) layerFAT.bringToFront();
-                    
-                    updateDatalist();
-                    document.getElementById('counter').innerText = `${featuresStore.length} منطقة جاهزة`;
-                    const loader = document.getElementById('loading');
-                    if (loader) {
-                        loader.style.opacity = '0';
-                        setTimeout(() => loader.remove(), 500);
-                    }
-                }
-            });
-        }
-
         function setupEvents() {
             document.getElementById('menuBtn').onclick = toggleSearch;
             document.getElementById('locBtn').onclick = toggleGPS;
-            
             document.getElementById('toggleFAT').onchange = e => {
                 if (e.target.checked) {
                     map.addLayer(layerFAT);
@@ -394,7 +413,6 @@
             };
             document.getElementById('toggleFTK').onchange = e => e.target.checked ? map.addLayer(layerFTK) : map.removeLayer(layerFTK);
             document.getElementById('togglePopups').onchange = toggleNames;
-            
             document.getElementById('zoneFilter').onchange = filterByArea;
         }
 
@@ -403,7 +421,6 @@
             const match = name.match(/\d+/);
             if (!match) return null;
             const num = parseInt(match[0]);
-
             for (const [zoneKey, data] of Object.entries(ZONE_RANGES)) {
                 if (data.specials && data.specials.includes(num)) return zoneKey;
                 if (data.ranges) {
@@ -416,31 +433,27 @@
 
         function updateCurrentZoneDisplay() {
             if (!map || !layerFTK) return;
-            
-            const center = map.getCenter();
-            if (!center || typeof center.lat !== 'number' || typeof center.lng !== 'number') return;
-            
-            const latlng = L.latLng(center.lat, center.lng);
-            let currentZoneName = "خارج النطاق";
+            try {
+                const center = map.getCenter();
+                // Verifying center object is valid
+                if (!center || typeof center.lat !== 'number' || isNaN(center.lat)) return;
 
-            layerFTK.eachLayer(l => {
-                if (l && typeof l.getBounds === 'function') {
-                    try {
+                let currentZoneName = "خارج النطاق";
+                layerFTK.eachLayer(l => {
+                    // Critical fix: checking if bounds are valid and defined
+                    if (l && l.getBounds) {
                         const bounds = l.getBounds();
-                        if (bounds && bounds.isValid() && bounds.contains(latlng)) {
-                            if (l.feature && l.feature.properties) {
-                                const zoneKey = findZoneByFTKName(l.feature.properties.Name);
-                                if (zoneKey) {
-                                    currentZoneName = zoneKey.charAt(0).toUpperCase() + zoneKey.slice(1);
-                                }
-                            }
+                        if (bounds && bounds.isValid() && bounds.contains(center)) {
+                            const zoneKey = findZoneByFTKName(l.feature.properties.Name);
+                            if (zoneKey) currentZoneName = zoneKey.charAt(0).toUpperCase() + zoneKey.slice(1);
                         }
-                    } catch (err) {}
-                }
-            });
-
-            const indicator = document.getElementById('zoneIndicator');
-            if (indicator) indicator.innerText = `الموقع الحالي: ${currentZoneName}`;
+                    }
+                });
+                const indicator = document.getElementById('zoneIndicator');
+                if (indicator) indicator.innerText = `الموقع الحالي: ${currentZoneName}`;
+            } catch (err) {
+                console.error("Error updating zone display:", err);
+            }
         }
 
         function toggleSearch() {
@@ -454,18 +467,13 @@
         function locateZone() {
             const query = document.getElementById('mainSearch').value.toUpperCase().trim();
             const target = featuresStore.find(f => f.name === query);
-            if (target) {
+            if (target && target.bounds && target.bounds.isValid()) {
                 const center = target.bounds.getCenter();
                 map.fitBounds(target.bounds, { padding: [50, 50], maxZoom: 16 });
-                
-                // Clear previous search marker
                 if (searchMarker) map.removeLayer(searchMarker);
-                
-                // Add marker with target name
                 searchMarker = L.marker(center).addTo(map)
-                    .bindPopup(`<div class="font-bold p-1">${target.name}</div>`, { className: 'custom-popup' })
+                    .bindPopup(`<div class="font-bold text-[11px] p-1">${target.name}</div>`, { className: 'custom-popup' })
                     .openPopup();
-
                 if (window.innerWidth < 768) toggleSearch();
             } else {
                 showToast("المنطقة غير موجودة");
@@ -478,23 +486,13 @@
                 layerFTK.setStyle({ fillOpacity: 0.2, weight: 1.5, color: '#3b82f6' });
                 return;
             }
-
             const data = ZONE_RANGES[zoneKey];
-            if (!data) return;
-            
             let foundLayers = [];
-
             layerFTK.eachLayer(l => {
-                if (!l.feature) return;
                 const name = l.feature.properties.Name;
-                const numStr = name.match(/\d+/);
-                const num = numStr ? parseInt(numStr[0]) : null;
-                
-                const isMatch = num !== null && (
-                    (data.specials && data.specials.includes(num)) || 
-                    (data.ranges && data.ranges.some(r => num >= r[0] && num <= r[1]))
-                );
-                
+                const numMatch = name.match(/\d+/);
+                const num = numMatch ? parseInt(numMatch[0]) : null;
+                const isMatch = num !== null && (data.specials.includes(num) || data.ranges.some(r => num >= r[0] && num <= r[1]));
                 if (isMatch) {
                     l.setStyle({ fillOpacity: 0.6, weight: 3, color: '#2563eb' });
                     foundLayers.push(l);
@@ -502,21 +500,15 @@
                     l.setStyle({ fillOpacity: 0.05, weight: 0.5, color: '#94a3b8' });
                 }
             });
-
             if (foundLayers.length > 0) {
                 const group = L.featureGroup(foundLayers);
-                const bounds = group.getBounds();
-                if (bounds.isValid()) {
-                    map.fitBounds(bounds, { padding: [60, 60] });
-                }
+                if (group.getBounds().isValid()) map.fitBounds(group.getBounds(), { padding: [60, 60] });
             }
         }
 
         function toggleNames(e) {
             const show = e.target.checked;
-            [layerFAT, layerFTK].forEach(layer => {
-                layer.eachLayer(l => show ? l.openPopup() : l.closePopup());
-            });
+            [layerFAT, layerFTK].forEach(layer => layer.eachLayer(l => show ? l.openPopup() : l.closePopup()));
         }
 
         function toggleGPS() {
@@ -536,7 +528,6 @@
                     } else {
                         userMarker.setLatLng(pos);
                     }
-                    updateCurrentZoneDisplay();
                 }, () => showToast("تعذر تحديد الموقع"), { enableHighAccuracy: true });
             }
         }
@@ -545,16 +536,22 @@
             const val = document.getElementById('coordsInput').value;
             const parts = val.split(',').map(p => parseFloat(p.trim()));
             if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-                map.setView(parts, 16);
-                
-                // Clear previous search marker
+                const latlng = L.latLng(parts[0], parts[1]);
+                map.setView(latlng, 16);
                 if (searchMarker) map.removeLayer(searchMarker);
-                
-                // Add marker with coordinates display instead of undefined target
-                searchMarker = L.marker(parts).addTo(map)
-                    .bindPopup(`<div class="font-bold p-1">${parts[0].toFixed(5)}, ${parts[1].toFixed(5)}</div>`, { className: 'custom-popup' })
+
+                let popupName = `${parts[0].toFixed(8)}, ${parts[1].toFixed(8)}`;
+                layerFAT.eachLayer(l => {
+                    try {
+                        if (l.getBounds && l.getBounds().isValid() && l.getBounds().contains(latlng)) {
+                            popupName = l.feature.properties.Name;
+                        }
+                    } catch(e) {}
+                });
+
+                searchMarker = L.marker(latlng).addTo(map)
+                    .bindPopup(`<div class="font-bold text-[11px] p-1">${popupName}</div>`, { className: 'custom-popup' })
                     .openPopup();
-                    
                 if (window.innerWidth < 768) toggleSearch();
             } else {
                 showToast("إحداثيات غير صحيحة");
@@ -563,7 +560,7 @@
 
         function updateDatalist() {
             const dl = document.getElementById('zonesData');
-            if (dl) dl.innerHTML = featuresStore.slice(0, 800).map(f => `<option value="${f.name}">`).join('');
+            if (dl) dl.innerHTML = featuresStore.slice(0, 1000).map(f => `<option value="${f.name}">`).join('');
         }
 
         function clearSearch() {

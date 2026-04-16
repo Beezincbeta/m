@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Partner Check System</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --success: #16a34a;
+            --danger: #dc2626;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #1e293b;
+            --border: #e2e8f0;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 450px;
+            width: 100%;
+            background: var(--card);
+            padding: 40px 30px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.04);
+            text-align: center;
+            position: relative;
+        }
+        h1 { color: var(--primary); margin-bottom: 8px; font-size: 1.6rem; letter-spacing: -0.5px; }
+        .subtitle { color: #94a3b8; margin-bottom: 30px; font-size: 0.85rem; }
+        
+        /* حالة النظام في الأعلى بشكل مصغر */
+        .system-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 25px;
+            font-size: 0.75rem;
+            color: #64748b;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #cbd5e1;
+        }
+        .status-dot.active {
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.4); }
+            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(22, 163, 74, 0); }
+            100% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+        }
+
+        /* واجهة البحث */
+        .search-box {
+            background: #f1f5f9;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+        }
+        .search-box label {
+            display: block;
+            text-align: right;
+            margin-bottom: 10px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        .input-wrapper {
+            display: flex;
+            gap: 8px;
+        }
+        input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            outline: none;
+            font-size: 1rem;
+            text-align: center;
+        }
+        input:focus { border-color: var(--primary); }
+        
+        .check-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: 0.2s;
+        }
+        .check-btn:hover:not(:disabled) { background: #1d4ed8; }
+        .check-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        /* نتائج الفحص */
+        .result-area {
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 15px;
+            border-radius: 10px;
+            font-weight: 600;
+            margin-top: 10px;
+            transition: 0.3s;
+        }
+        .result-empty { background: transparent; color: #94a3b8; font-weight: normal; font-size: 0.85rem; }
+        .result-available { background: #dcfce7; color: var(--success); border: 1px solid #bbf7d0; }
+        .result-taken { background: #fee2e2; color: var(--danger); border: 1px solid #fecaca; }
+
+        /* إخفاء التوكن تماماً */
+        #tokenValue { position: absolute; left: -9999px; }
+
+        .footer-links {
+            margin-top: 20px;
+            border-top: 1px solid var(--border);
+            padding-top: 15px;
+        }
+        .reset-link {
+            background: none;
+            border: none;
+            color: #94a3b8;
+            font-size: 0.75rem;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📡</h1>
+    <div class="subtitle">نظام التحقق من توفر رقم الدار</div>
+
+    <div class="system-status">
+        <div id="statusDot" class="status-dot"></div>
+        <span id="systemText">جاري تهيئة النظام...</span>
+    </div>
+
+    <div class="search-box">
+        <label for="houseNumber">أدخل رقم الدار للتحقق:</label>
+        <div class="input-wrapper">
+            <input type="text" id="houseNumber" placeholder="مثال: SG100" autocomplete="off">
+            <button id="checkBtn" class="check-btn">تحقق</button>
+        </div>
+    </div>
+
+    <div id="resultArea" class="result-area result-empty">
+        أدخل رقم الدار ثم اضغط على زر التحقق
+    </div>
+
+    <div id="tokenValue"></div>
+
+    <div class="footer-links">
+        <button id="resetBtn" class="reset-link">إعادة مزامنة النظام</button>
+    </div>
+</div>
+
+<script>
+    const systemText = document.getElementById('systemText');
+    const statusDot = document.getElementById('statusDot');
+    const houseInput = document.getElementById('houseNumber');
+    const checkBtn = document.getElementById('checkBtn');
+    const resultArea = document.getElementById('resultArea');
+    const tokenValue = document.getElementById('tokenValue');
+    const resetBtn = document.getElementById('resetBtn');
+
+    const CREDENTIALS = {
+        u: 'QmFrZXIuc2FtZWVy',
+        p: 'YmFrMjAyNGVy'
+    };
+
+    const TOKEN_EXPIRY_MS = 4 * 60 * 60 * 1000; 
+    const REFRESH_BEFORE_MS = 5 * 60 * 1000;
+
+    // --- نظام المصادقة الخلفي ---
+
+    async function performAutoLogin() {
+        const u = atob(CREDENTIALS.u);
+        const p = atob(CREDENTIALS.p);
+
+        try {
+            systemText.textContent = "جاري تجديد الجلسة...";
+            statusDot.classList.remove('active');
+            
+            const response = await fetch('https://admin.alrabut.com/back/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ username: u, password: p })
+            });
+
+            const data = await response.json();
+            if (!response.ok) throw new Error("Authentication failed");
+
+            const rawToken = data.token || (data.data && data.data.token) || data.access_token;
+
+            if (rawToken) {
+                const fullToken = `Bearer ${rawToken}`;
+                localStorage.setItem('but_token', fullToken);
+                localStorage.setItem('but_last_sync', Date.now());
+                setupAuthenticatedState(fullToken);
+            }
+        } catch (err) {
+            systemText.textContent = "فشل في ربط النظام";
+        }
+    }
+
+    function setupAuthenticatedState(token) {
+        tokenValue.textContent = token;
+        systemText.textContent = "النظام جاهز للعمل";
+        statusDot.classList.add('active');
+        checkBtn.disabled = false;
+    }
+
+    function checkTokenStatus() {
+        const savedToken = localStorage.getItem('but_token');
+        const lastSync = parseInt(localStorage.getItem('but_last_sync'));
+        const now = Date.now();
+
+        if (!savedToken || !lastSync || (now - lastSync >= (TOKEN_EXPIRY_MS - REFRESH_BEFORE_MS))) {
+            performAutoLogin();
+        } else {
+            setupAuthenticatedState(savedToken);
+        }
+    }
+
+    // --- نظام البحث الجديد ---
+
+    async function checkPartner(searchQuery) {
+        const token = tokenValue.textContent;
+        if (!token) {
+            alert("يرجى الانتظار حتى يتم ربط النظام...");
+            return;
+        }
+
+        resultArea.className = "result-area result-empty";
+        resultArea.textContent = "جاري التحقق من قاعدة البيانات...";
+        checkBtn.disabled = true;
+
+        try {
+            const response = await fetch(`https://admin.alrabut.com/back/api/partner_request/checkPartner/${encodeURIComponent(searchQuery)}`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': token,
+                    'Accept': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+
+            // المنطق المطللوب:
+            // إذا كانت message فارغة -> المنزل غير مستخدم
+            // إذا كانت تحتوي على نص -> المنزل مستخدم/محجوز
+            const message = data.message || "";
+
+            if (message.trim() === "") {
+                resultArea.className = "result-area result-available";
+                resultArea.textContent = "✅ هذا الرقم متاح (غير مستخدم مسبقاً)";
+            } else {
+                resultArea.className = "result-area result-taken";
+                resultArea.textContent = `❌ ${message}`;
+            }
+
+        } catch (err) {
+            resultArea.className = "result-area result-taken";
+            resultArea.textContent = "⚠️ حدث خطأ أثناء فحص البيانات";
+        } finally {
+            checkBtn.disabled = false;
+        }
+    }
+
+    // --- الأحداث ---
+
+    checkBtn.addEventListener('click', () => {
+        const val = houseInput.value.trim();
+        if (val) checkPartner(val);
+    });
+
+    houseInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            const val = houseInput.value.trim();
+            if (val) checkPartner(val);
+        }
+    });
+
+    window.addEventListener('load', () => {
+        checkBtn.disabled = true;
+        checkTokenStatus();
+        setInterval(checkTokenStatus, 30000);
+    });
+
+    resetBtn.addEventListener('click', () => {
+        localStorage.clear();
+        location.reload();
+    });
+</script>
+
+</body>
+</html>
